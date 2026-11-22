@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Carnet de récolte</title>
+  <meta name="description" content="Photographier sa récolte de pommes, variété par variété, même sans réseau.">
+  <meta name="theme-color" content="#233d2b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="back" id="back" href="#/" hidden></a>
+    <a class="brand" id="brand" href="#/">Carnet de récolte</a>
+    <button class="lang" id="lang" type="button" aria-label="Language">EN</button>
+  </header>
+  <main id="view"></main>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="confirm">
+    <p id="confirm-text"></p>
+    <div class="dialog-actions">
+      <button class="button" id="confirm-no" type="button"></button>
+      <button class="button danger" id="confirm-yes" type="button"></button>
+    </div>
+  </dialog>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
