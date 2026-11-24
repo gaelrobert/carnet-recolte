@@ -190,6 +190,10 @@ h2 { margin: 24px 0 8px; font: 700 18px/1.3 var(--serif); }
 .card-name { min-width: 0; font: 700 19px/1.25 var(--serif); overflow-wrap: anywhere; }
 .card-status { flex: none; color: var(--muted); font-size: 14px; }
 .card-status.ok { color: var(--ok); font-weight: 700; }
+.card-line { display: block; color: var(--muted); font-size: 15px; line-height: 1.35; }
+
+.meter { height: 8px; margin: 4px 0 14px; overflow: hidden; border-radius: 4px; background: var(--line); }
+.meter span { display: block; height: 100%; background: var(--leaf); transition: width .3s; }
 
 .tracker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .step { display: grid; grid-template-columns: 1fr auto; column-gap: 4px; font-size: 13px; color: var(--muted); }
