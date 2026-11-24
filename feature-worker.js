@@ -7,30 +7,40 @@ ort.env.wasm.numThreads = self.crossOriginIsolated
   : 1;
 
 const MODEL = 'model/dinov2-small/model_quantized.onnx';
+const MODEL_BYTES = 24427763;
 const MEAN = [0.485, 0.456, 0.406];
 const STD = [0.229, 0.224, 0.225];
 let session;
 
-async function download(url) {
+/* Servers such as GitHub Pages compress the download, so its announced length is smaller than
+   the file. The pieces are collected as they come, and progress uses the known file size. */
+async function download(url, expected) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  const total = Number(response.headers.get('content-length')) || 0;
-  if (!response.body || !total) return new Uint8Array(await response.arrayBuffer());
-  const data = new Uint8Array(total);
+  const announced = Number(response.headers.get('content-length')) || 0;
+  const total = (!response.headers.get('content-encoding') && announced) || expected;
+  if (!response.body) return new Uint8Array(await response.arrayBuffer());
   const reader = response.body.getReader();
+  const chunks = [];
   let loaded = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    data.set(value, loaded);
+    chunks.push(value);
     loaded += value.length;
-    self.postMessage({ type: 'progress', loaded, total });
+    self.postMessage({ type: 'progress', loaded: Math.min(loaded, total), total });
   }
-  return data.subarray(0, loaded);
+  const data = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return data;
 }
 
 async function init() {
-  const model = await download(MODEL);
+  const model = await download(MODEL, MODEL_BYTES);
   session = await ort.InferenceSession.create(model, {
     executionProviders: ['wasm'],
     graphOptimizationLevel: 'all',

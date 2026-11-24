@@ -1,6 +1,6 @@
 /* Opens instantly and works with no signal. Photos live in IndexedDB and are never touched here. */
 const PREFIX = 'carnet-recolte-';
-const CACHE = `${PREFIX}v2`;
+const CACHE = `${PREFIX}v3`;
 // The 36 MB model is fetched only when the farmer turns analysis on, then kept across app updates.
 const MODEL_CACHE = `${PREFIX}model-v1`;
 const LARGE = /\/(vendor\/ort-wasm-simd-threaded\.wasm|model\/dinov2-small\/model_quantized\.onnx)$/;
