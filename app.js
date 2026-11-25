@@ -551,8 +551,10 @@ function checkStrip(photos) {
   if (!status.enabled) text = t('checkStripOff');
   else if (status.phase === 'loading') text = t('checkStripLoading');
   else if (status.phase === 'error') text = t('checkStripError');
+  else if (status.phase === 'unsupported') text = t('checkStripUnsupported');
   else if (status.pending) text = t('checkStripPending', { photos: photosText(status.pending) });
-  return h('a', { class: `backup-strip${status.phase === 'error' ? ' due' : ''}`, href: '#/check' },
+  const due = status.phase === 'error' || status.phase === 'unsupported';
+  return h('a', { class: `backup-strip${due ? ' due' : ''}`, href: '#/check' },
     h('span', {}, text),
     h('span', { class: 'strip-action' }, t('checkAction')));
 }
@@ -590,6 +592,8 @@ async function renderCheck() {
     ];
   }
 
+  if (status.phase === 'unsupported') return [...head, h('p', { class: 'goal' }, t('analysisUnsupported'))];
+
   const busy = status.phase === 'loading' || (status.phase === 'ready' && status.pending !== 0);
   const [varieties, photos, features] = await Promise.all([
     store.listVarieties(),
@@ -600,9 +604,13 @@ async function renderCheck() {
   if (status.phase === 'loading') {
     const share = status.total ? status.loaded / status.total : 0;
     progress.push(h('p', { class: 'stage' }, status.total ? t('modelLoading', { pct: percent(share) }) : t('modelPreparing')), meter(share));
+    if (status.attempt > 1) {
+      progress.push(h('p', { class: 'caution' }, t('modelRetrying', { n: status.attempt, max: analysis.MAX_ATTEMPTS })));
+    }
   } else if (status.phase === 'error') {
     const again = () => { analysis.retry(); render(); };
-    progress.push(h('p', { class: 'goal' }, t('analysisFailed')),
+    progress.push(h('p', { class: 'goal' }, t(status.step === 'download' ? 'analysisFailed' : 'analysisCrashed')),
+      status.error && h('p', { class: 'caution detail' }, t('errorDetail', { message: status.error })),
       h('div', { class: 'actions' }, h('button', { class: 'button', type: 'button', onclick: again }, t('retry'))));
   } else if (busy) {
     const done = Math.max(0, photos.length - (status.pending ?? photos.length) - status.failed);

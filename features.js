@@ -5,13 +5,20 @@ import * as store from './store.js';
 export const FEATURE_TAG = 'dinov2-small-q8/224/centre-square/v1';
 export const INPUT_SIZE = 224;
 export const DOWNLOAD_MB = 36;
+export const MAX_ATTEMPTS = 3;
 const SETTING = 'analysis';
+// A tiny WebAssembly program using SIMD, which the analysis engine needs (iOS 16.4 and later, recent Android browsers).
+const SIMD_PROBE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]);
 
 const listeners = new Set();
-const status = { enabled: readSetting(), phase: 'off', loaded: 0, total: 0, pending: null, failed: 0, ms: null };
+const status = {
+  enabled: readSetting(), phase: 'off', loaded: 0, total: 0, pending: null, failed: 0, ms: null,
+  attempt: 0, step: null, error: null,
+};
 const waiting = new Map();
 const failed = new Set();
 let worker = null;
+let retryTimer = null;
 let draining = false;
 let again = false;
 let nextRequest = 1;
@@ -38,18 +45,35 @@ export function enable() {
   start();
 }
 
+function supported() {
+  try {
+    return typeof Worker === 'function' && typeof WebAssembly === 'object' && WebAssembly.validate(SIMD_PROBE);
+  } catch (_) {
+    return false;
+  }
+}
+
 export function start() {
-  if (!status.enabled || worker) return;
-  update({ phase: 'loading', loaded: 0, total: 0 });
+  if (!status.enabled || worker || retryTimer) return;
+  if (!supported()) {
+    update({ phase: 'unsupported' });
+    return;
+  }
+  launch(1);
+}
+
+function launch(attempt) {
+  update({ phase: 'loading', loaded: 0, total: 0, attempt, step: null, error: null });
   worker = new Worker('feature-worker.js');
   worker.onmessage = ({ data }) => {
     if (data.type === 'progress') update({ loaded: data.loaded, total: data.total });
     else if (data.type === 'ready') { update({ phase: 'ready' }); analyseSoon(); }
     else if (data.type === 'vector') settle(data.id, null, data);
     else if (data.type === 'error' && data.id) settle(data.id, new Error(data.message));
-    else if (data.type === 'error') stop(data.message);
+    else if (data.type === 'error') stop(data.message, data.step);
   };
-  worker.onerror = (event) => { event.preventDefault?.(); stop(event.message || 'worker failed'); };
+  // A worker that closes without a message usually ran out of memory.
+  worker.onerror = (event) => { event.preventDefault?.(); stop(event.message || 'the analysis engine closed', 'engine'); };
   worker.postMessage({ type: 'init' });
 }
 
@@ -57,13 +81,38 @@ export function retry() {
   if (status.phase === 'error') start();
 }
 
-function stop(message) {
-  console.error('Photo analysis stopped:', message);
+/* Runs now, or once the farmer is back in the app: phones pause hidden pages. */
+function whenVisible(run) {
+  if (document.visibilityState !== 'hidden') {
+    run();
+    return;
+  }
+  const back = () => {
+    if (document.visibilityState === 'hidden') return;
+    document.removeEventListener('visibilitychange', back);
+    run();
+  };
+  document.addEventListener('visibilitychange', back);
+}
+
+function stop(message, step = 'engine') {
+  console.error('Photo analysis stopped:', step, message);
+  const attempt = status.attempt;
+  const wasLoading = status.phase === 'loading';
   worker?.terminate();
   worker = null;
   for (const entry of waiting.values()) entry.reject(new Error(message));
   waiting.clear();
-  update({ phase: 'error' });
+  if (wasLoading && step === 'download' && attempt < MAX_ATTEMPTS) {
+    // A cut connection is tried again by itself, a little later each time.
+    update({ phase: 'loading', loaded: 0, total: 0, attempt: attempt + 1, step, error: message });
+    retryTimer = setTimeout(() => whenVisible(() => {
+      retryTimer = null;
+      launch(attempt + 1);
+    }), attempt * 4000);
+    return;
+  }
+  update({ phase: 'error', step, error: message });
 }
 
 function settle(id, error, data) {

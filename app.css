@@ -302,6 +302,7 @@ textarea:focus, input[type="text"]:focus { outline: 3px solid var(--russet); out
 .files .goal { margin: 0; }
 .file-actions { display: grid; gap: 8px; }
 .caution { margin: 12px 0 18px; color: var(--muted); font-size: 15px; }
+.caution.detail { font-size: 13px; overflow-wrap: anywhere; }
 
 .toast {
   position: fixed;

@@ -8,9 +8,18 @@ ort.env.wasm.numThreads = self.crossOriginIsolated
 
 const MODEL = 'model/dinov2-small/model_quantized.onnx';
 const MODEL_BYTES = 24427763;
+const MODEL_CACHE = 'carnet-recolte-model-v1';
 const MEAN = [0.485, 0.456, 0.406];
 const STD = [0.229, 0.224, 0.225];
 let session;
+
+/* Errors say which step failed, so the app can tell a cut connection from a phone that cannot run the model. */
+class StepError extends Error {
+  constructor(step, error) {
+    super(String((error && error.message) || error));
+    this.step = step;
+  }
+}
 
 /* Servers such as GitHub Pages compress the download, so its announced length is smaller than
    the file. The pieces are collected as they come, and progress uses the known file size. */
@@ -39,12 +48,34 @@ async function download(url, expected) {
   return data;
 }
 
+async function forgetSavedModel() {
+  try {
+    await (await caches.open(MODEL_CACHE)).delete(MODEL, { ignoreSearch: true });
+  } catch (_) { /* nothing saved, or no storage: the next try downloads anyway */ }
+}
+
 async function init() {
-  const model = await download(MODEL, MODEL_BYTES);
-  session = await ort.InferenceSession.create(model, {
-    executionProviders: ['wasm'],
-    graphOptimizationLevel: 'all',
-  });
+  let model;
+  try {
+    model = await download(MODEL, MODEL_BYTES);
+  } catch (error) {
+    throw new StepError('download', error);
+  }
+  if (model.length !== MODEL_BYTES) {
+    await forgetSavedModel();
+    throw new StepError('download', `incomplete model (${model.length} of ${MODEL_BYTES} bytes)`);
+  }
+  self.postMessage({ type: 'progress', loaded: 0, total: 0 }); // downloaded: now preparing
+  try {
+    session = await ort.InferenceSession.create(model, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+  } catch (error) {
+    // The engine file is fetched here, so a cut connection can still show up at this step.
+    const network = /fetch|network|load failed|connection|aborted/i.test(String(error && error.message));
+    throw new StepError(network ? 'download' : 'engine', error);
+  }
   self.postMessage({ type: 'ready' });
 }
 
@@ -89,6 +120,11 @@ self.onmessage = async ({ data }) => {
       self.postMessage({ type: 'vector', id: data.id, vector, ms }, [vector.buffer]);
     }
   } catch (error) {
-    self.postMessage({ type: 'error', id: data.id ?? null, message: String((error && error.message) || error) });
+    self.postMessage({
+      type: 'error',
+      id: data.id ?? null,
+      step: error.step || (data.type === 'init' ? 'engine' : 'photo'),
+      message: String((error && error.message) || error),
+    });
   }
 };
