@@ -2,8 +2,9 @@
 const PREFIX = 'carnet-recolte-';
 // v6 removed the recognition check, now in Pomologue: activating it (or any later version) also
 // deletes the model kept for that check (carnet-recolte-model-v1, about 36 MB).
-// v7: photo thumbnails no longer drawn out of place on iPhones.
-const CACHE = `${PREFIX}v7`;
+// v7: photo thumbnails no longer drawn as separate layers (did not fix the iPhone bug).
+// v8: thumbnails get a fixed size instead of aspect-ratio, and are no longer lazy-loaded.
+const CACHE = `${PREFIX}v8`;
 const SHELL = [
   './',
   'index.html',

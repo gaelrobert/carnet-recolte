@@ -248,12 +248,15 @@ h2 { margin: 24px 0 8px; font: 700 18px/1.3 var(--serif); }
 .view-icon { width: 46px; height: 46px; }
 .view-icon svg { display: block; width: 100%; height: 100%; }
 
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-/* No positioning or clipping on thumbnails: iPhones drew such boxes as separate layers, and could
-   paint a row of them far below its place, moving with the camera bar. The picture rounds its own
-   corners, and the warning badge is pulled back over its top-right corner. */
-.grid a { display: flex; aspect-ratio: 1; border-radius: 6px; background: var(--line); }
-.grid img { flex: none; display: block; width: 100%; height: 100%; border-radius: 6px; object-fit: cover; }
+/* Thumbnails get a fixed height worked out from the screen width, never from the picture or from
+   aspect-ratio: iPhones placed the second row of square (aspect-ratio) thumbnails about 230 px
+   below its place, over whatever came next. The content is the screen width (up to 520 px) less
+   two 16 px margins; less three 4 px gaps, divided by four, gives one column. No positioning or
+   clipping either: the picture rounds its own corners, and the warning badge is pulled back over
+   its top-right corner. */
+.grid { --cell: calc((min(100vw, 520px) - 44px) / 4); display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.grid a { display: flex; border-radius: 6px; }
+.grid img { flex: none; display: block; width: 100%; height: var(--cell); border-radius: 6px; background: var(--line); object-fit: cover; }
 .flag {
   flex: none;
   align-self: flex-start;

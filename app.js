@@ -147,7 +147,8 @@ function confirmAction(message) {
 }
 
 function thumbImage(photo, alt) {
-  const image = h('img', { alt, loading: 'lazy', decoding: 'async' });
+  // Not lazy: thumbnails are small local files, and Safari has laid out lazy images in grids wrongly.
+  const image = h('img', { alt });
   const cached = state.thumbs.get(photo.id);
   if (cached) {
     image.src = cached;
