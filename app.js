@@ -2,8 +2,6 @@ import { STRINGS } from './i18n.js';
 import * as store from './store.js';
 import { processPhoto } from './photo.js';
 import { buildExport } from './zip.js';
-import * as analysis from './features.js';
-import { selfTest } from './selftest.js';
 
 const GOALS = { day1: 10, day2: 10, test: 6 };
 const VIEWS = ['side', 'stem', 'eye'];
@@ -234,7 +232,6 @@ async function renderHome() {
     photos.length > 0 && h('a', { class: `backup-strip${pending ? ' due' : ''}`, href: '#/backup' },
       h('span', {}, pending ? t('toBackup', { photos: photosText(pending) }) : t('allSaved')),
       h('span', { class: 'strip-action' }, t('backupAction'))),
-    checkStrip(photos),
     h('ul', { class: 'cards' }, cards),
     h('div', { class: 'dock' }, h('a', { class: 'button', href: '#/add' }, t('addVarieties'))),
   ];
@@ -311,7 +308,6 @@ async function capture(event, variety, shot, replaces) {
     state.last = { id: record.id, varietyId: variety.id, warnings: record.warnings };
     state.viewChoice = null;
     state.backup = null;
-    analysis.analyseSoon();
     navigator.storage?.persist?.().catch(() => {});
   } finally {
     state.busy = false;
@@ -536,110 +532,6 @@ async function renderBackup() {
   ];
 }
 
-const percent = (value) => new Intl.NumberFormat(state.lang === 'fr' ? 'fr-FR' : 'en-GB', { style: 'percent', maximumFractionDigits: 0 }).format(value);
-
-function meter(share) {
-  const value = Math.round(Math.min(1, Math.max(0, share)) * 100);
-  return h('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(value) },
-    h('span', { style: `width:${value}%` }));
-}
-
-function checkStrip(photos) {
-  if (!photos.length) return null;
-  const status = analysis.getStatus();
-  let text = t('checkStripReady');
-  if (!status.enabled) text = t('checkStripOff');
-  else if (status.phase === 'loading') text = t('checkStripLoading');
-  else if (status.phase === 'error') text = t('checkStripError');
-  else if (status.phase === 'unsupported') text = t('checkStripUnsupported');
-  else if (status.pending) text = t('checkStripPending', { photos: photosText(status.pending) });
-  const due = status.phase === 'error' || status.phase === 'unsupported';
-  return h('a', { class: `backup-strip${due ? ' due' : ''}`, href: '#/check' },
-    h('span', {}, text),
-    h('span', { class: 'strip-action' }, t('checkAction')));
-}
-
-function checkRows(varieties, result) {
-  const names = new Map(varieties.map((variety) => [variety.id, variety.name]));
-  const entries = new Map(result.perVariety.map((entry) => [entry.varietyId, entry]));
-  const collator = new Intl.Collator(state.lang);
-  return [...varieties].sort((a, b) => collator.compare(a.name, b.name)).map((variety) => {
-    const entry = entries.get(variety.id);
-    const tested = Boolean(entry && entry.test);
-    let line = t('noTrainYet');
-    if (tested) line = t('varietyScore', { right: entry.correct, n: entry.test });
-    else if (entry) line = t('noTestYet');
-    return h('li', { class: 'card' },
-      h('span', { class: 'card-head' },
-        h('span', { class: 'card-name' }, variety.name),
-        tested && h('span', { class: `card-status${entry.correct === entry.test ? ' ok' : ''}` }, percent(entry.correct / entry.test))),
-      h('span', { class: 'card-line' }, line),
-      tested && entry.confusedWith && h('span', { class: 'card-line' },
-        t('confusedWith', { name: names.get(entry.confusedWith) ?? '?', n: entry.confusedCount })));
-  });
-}
-
-async function renderCheck() {
-  const status = analysis.getStatus();
-  const head = [h('h1', {}, t('checkTitle')), h('p', { class: 'lead' }, t('checkLead'))];
-  if (!status.enabled) {
-    const turnOn = () => { analysis.enable(); render(); };
-    return [
-      ...head,
-      h('ul', { class: 'tips' }, ['checkHow1', 'checkHow2', 'checkHow3'].map((key) => h('li', {}, t(key)))),
-      h('p', { class: 'caution' }, t('checkDownload', { mb: analysis.DOWNLOAD_MB })),
-      h('div', { class: 'dock' }, h('button', { class: 'button primary', type: 'button', onclick: turnOn }, t('enableAnalysis'))),
-    ];
-  }
-
-  if (status.phase === 'unsupported') return [...head, h('p', { class: 'goal' }, t('analysisUnsupported'))];
-
-  const busy = status.phase === 'loading' || (status.phase === 'ready' && status.pending !== 0);
-  const [varieties, photos, features] = await Promise.all([
-    store.listVarieties(),
-    store.listPhotos(),
-    busy ? [] : store.listFeatures(), // descriptions are only read once the analysis has caught up
-  ]);
-  const progress = [];
-  if (status.phase === 'loading') {
-    const share = status.total ? status.loaded / status.total : 0;
-    progress.push(h('p', { class: 'stage' }, status.total ? t('modelLoading', { pct: percent(share) }) : t('modelPreparing')), meter(share));
-    if (status.attempt > 1) {
-      progress.push(h('p', { class: 'caution' }, t('modelRetrying', { n: status.attempt, max: analysis.MAX_ATTEMPTS })));
-    }
-  } else if (status.phase === 'error') {
-    const again = () => { analysis.retry(); render(); };
-    progress.push(h('p', { class: 'goal' }, t(status.step === 'download' ? 'analysisFailed' : 'analysisCrashed')),
-      status.error && h('p', { class: 'caution detail' }, t('errorDetail', { message: status.error })),
-      h('div', { class: 'actions' }, h('button', { class: 'button', type: 'button', onclick: again }, t('retry'))));
-  } else if (busy) {
-    const done = Math.max(0, photos.length - (status.pending ?? photos.length) - status.failed);
-    progress.push(h('p', { class: 'stage' }, t('analysing', { done, total: photos.length })), meter(photos.length ? done / photos.length : 0));
-  }
-  if (status.failed) progress.push(h('p', { class: 'goal' }, t('analysisSkipped', { n: status.failed })));
-  if (busy) return [...head, ...progress, h('p', { class: 'caution' }, t('resultsAfter'))];
-
-  const vectors = new Map(features.filter((item) => item.tag === analysis.FEATURE_TAG).map((item) => [item.id, item.vector]));
-  const result = selfTest(photos, vectors);
-  if (result.varieties < 2 || !result.photos) return [...head, ...progress, h('p', { class: 'goal' }, t('checkNeeds'))];
-  const stats = [
-    [t('statTop1'), percent(result.top1 / result.photos)],
-    result.varieties >= 4 && [t('statTop3'), percent(result.top3 / result.photos)],
-    [t('statChance'), percent(1 / result.varieties)],
-  ].filter(Boolean);
-  return [
-    ...head,
-    ...progress,
-    h('dl', { class: 'stats' }, stats.map(([label, value]) => h('div', {}, h('dt', {}, label), h('dd', {}, value)))),
-    h('p', { class: 'stage' }, t('checkBasis', { photos: photosText(result.photos), varieties: counted('variety', result.varieties) })),
-    result.apples > 0 && h('p', { class: 'stage' },
-      t('checkApples', { pct: percent(result.appleTop1 / result.apples), apples: counted('apple', result.apples) })),
-    h('h2', {}, t('perVariety')),
-    h('ul', { class: 'cards' }, checkRows(varieties, result)),
-    h('p', { class: 'caution' }, t('checkCaution')),
-  ];
-}
-
 function missingScreen() {
   return [
     h('h1', {}, t('notFound')),
@@ -668,7 +560,6 @@ async function render() {
   else if (screen === 'variety') nodes = await renderVariety(id);
   else if (screen === 'photo') nodes = await renderPhoto(id);
   else if (screen === 'backup') nodes = await renderBackup();
-  else if (screen === 'check') nodes = await renderCheck();
   else nodes = await renderHome();
   if (token !== state.token) return;
   const open = [...view.querySelectorAll('details')].map((item) => item.open);
@@ -699,15 +590,7 @@ window.addEventListener('appinstalled', () => {
   render();
 });
 
-// Progress only changes the home and check screens; at most one refresh every 0.7 s.
-analysis.onChange(() => {
-  const { screen } = currentRoute();
-  if ((screen !== '' && screen !== 'check') || render.analysisTimer) return;
-  render.analysisTimer = setTimeout(() => { render.analysisTimer = null; render(); }, 700);
-});
-
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-analysis.start();
 render();
