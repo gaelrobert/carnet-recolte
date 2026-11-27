@@ -1,8 +1,9 @@
 /* Opens instantly and works with no signal. Photos live in IndexedDB and are never touched here. */
 const PREFIX = 'carnet-recolte-';
-// v6 removed the recognition check, now in Pomologue: activating it also deletes the model kept
-// for that check (carnet-recolte-model-v1, about 36 MB).
-const CACHE = `${PREFIX}v6`;
+// v6 removed the recognition check, now in Pomologue: activating it (or any later version) also
+// deletes the model kept for that check (carnet-recolte-model-v1, about 36 MB).
+// v7: photo thumbnails no longer drawn out of place on iPhones.
+const CACHE = `${PREFIX}v7`;
 const SHELL = [
   './',
   'index.html',
